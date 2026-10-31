@@ -1,0 +1,80 @@
+---
+# tasks file for node_exporter
+- name: create exporter group
+  ansible.builtin.group:
+    name: node_exporter
+    state: present
+
+- name: create node_exporter system user
+  ansible.builtin.user:
+    name: node_exporter
+    group: node_exporter
+    shell: /sbin/nologin
+    system: yes
+    state: present
+
+
+
+#node export first download then to unzip tmp folder
+- name: download and extraact node exporter binary
+  ansible.builtin.unarchive:
+    src: https://github.com/prometheus/node_exporter/releases/download/v1.7.0/node_exporter-1.7.0.linux-amd64.tar.gz
+    dest: /tmp/
+    remote_src: yes
+
+
+
+# the file to copy to excuting folder
+- name: copy node_exporter binary to system path
+  ansible.builtin.copy:
+    src: /tmp/node_exporter-1.7.0.linux-amd64/node_exporter
+    dest: /usr/local/bin/node_exporter
+    owner: node_exporter
+    group: node_exporter
+    mode: '0755'
+    remote_src: yes
+
+
+
+
+#systemd service ready
+- name: create systemd service for node exporter
+  ansible.builtin.copy:
+    dest:   /etc/systemd/system/node_exporter.service
+    content: |
+      [Unit]
+      Description=Node Exporter
+      Wants=networ-online.target
+      After=network-online.target
+
+      [Service]
+      User=node_exporter
+      Group=node_exporter
+      Type=simple
+      ExecStart=/usr/local/bin/node_exporter
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  notify: reload systemd and restart node_exporter
+#add firewall port nnmber
+
+
+
+- name: allow port 9100 in firewalld
+  ansible.posix.firewalld:
+    port: 9100/tcp
+    permanent: yes
+    immediate: yes
+    state: enabled
+  when: ansible_facts['os_family'] == 'Redhat'
+
+
+
+  
+#service starting node_exporter
+- name: ensure node_exporter service is running and enabled
+  ansible.builtin.systemd:
+    name: node_exporter
+    state: started
+    enabled: yes

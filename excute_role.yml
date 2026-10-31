@@ -1,0 +1,15 @@
+---
+#install node exporter in aws and local vm
+- name:  excute the role
+  hosts: all
+  become: true
+  roles:
+    - node_exporter
+
+
+# prometheus and grafana only install in aws ec2
+- name: deploy prometheus and grafana stack on monitoriing server
+  hosts: monitoring_server
+  become: true
+  roles:
+    - prometheus_grafana

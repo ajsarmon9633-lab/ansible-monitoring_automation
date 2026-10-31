@@ -1,0 +1,136 @@
+---
+# tasks file for prometheus_grafana
+# creating user and group
+- name: create the group
+  ansible.builtin.group:
+    name: prometheus
+    state: present
+
+
+- name: create prometheus group adn user
+  ansible.builtin.user:
+    name: prometheus
+    group: prometheus
+    shell: /sbin/nologin
+    system: yes
+    state: present
+
+
+
+#prometheus downloading and unzip
+- name:  downlaod and extract prometheus
+  ansible.builtin.unarchive:
+    src: https://github.com/prometheus/prometheus/releases/download/v2.45.0/prometheus-2.45.0.linux-amd64.tar.gz
+    dest: /tmp/
+    remote_src: yes
+
+#prometheus to copy and paste to binary file
+- name: copy prometheus binaries
+  ansible.builtin.copy:
+    src: "/tmp/prometheus-2.45.0.linux-amd64/{{ item}}"
+    dest: "/usr/local/bin/{{ item }}"
+    owner: prometheus
+    group: prometheus
+    mode: '0755'
+    remote_src: yes
+  loop:
+    -  prometheus
+    -  promtool 
+#creating prometheus configuration file
+- name: create prometheus configuration directory
+  ansible.builtin.file:
+    path: /etc/prometheus
+    state: directory
+    owner: prometheus
+    group: prometheus
+#in the list of prometheus and take and move into copy console file
+- name: copy console directories to /etc/prometheus
+  ansible.builtin.copy:
+    src: "/tmp/prometheus-2.45.0.linux-amd64/{{ item }}"
+    dest: /etc/prometheus/
+    owner: prometheus
+    group: prometheus
+    remote_src: yes
+  loop:
+    - consoles
+    - console_libraries
+#copy the jinja file and to destination paste and if any changes then call notify
+- name: copy prometheus configuration templaate
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /etc/prometheus/prometheus.yml
+    owner: prometheus
+    group: prometheus
+  notify: restart prometheus service
+#creating directory  for systemd service ready
+- name: create prometheus data directory
+  ansible.builtin.file:
+    path: /var/lib/prometheus
+    state: directory
+    owner: prometheus
+    group: prometheus
+
+- name: create prometheus systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/prometheus.service
+    content:  |
+      [ Unit ]
+      Description=Prometheus
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      User=prometheus
+      Group=prometheus
+      Type=simple
+      ExecStart=/usr/local/bin/prometheus \
+        --config.file=/etc/prometheus/prometheus.yml \
+        --storage.tsdb.path=/var/lib/prometheus/ \
+        --web.console.templates=/etc/prometheus/consoles \
+        --web.console.libraries=/etc/prometheus/console_libraries
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  notify: restart prometheus service
+
+- name: ensure prometheus service is running and enabeld
+  ansible.builtin.systemd:
+    name: prometheus
+    state: started
+    enabled: yes
+    daemon_reload: yes
+#grafana repository add and install
+- name: add grafana yum repository
+  ansible.builtin.yum_repository:
+    name: grafana
+    description: grafana
+    baseurl: https://rpm.grafana.com
+    gpgcheck: yes
+    gpgkey: https://rpm.grafana.com/gpg.key
+    enabled: yes
+# grafana package install
+- name: install thee package
+  ansible.builtin.package:
+    name: grafana
+    state: present
+# start the grafana service
+- name: start grafana service
+  ansible.builtin.systemd:
+    name: grafana-server
+    state: started
+    enabled: true
+#firewall port number set
+- name: allow prometheus 9090 and grafana 3000 ports in firewalld
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    immediate: yes
+    state: enabled
+  loop:
+    - 9090/tcp
+    - 3000/tcp
+  when: ansible_facts['os_family'] == 'Redhat'
+
+
+

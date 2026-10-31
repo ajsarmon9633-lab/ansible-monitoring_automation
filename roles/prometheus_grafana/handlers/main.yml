@@ -1,0 +1,7 @@
+---
+# handlers file for prometheus_grafana
+- name: restart prometheus service
+  ansible.builtin.systemd:
+    name: prometheus
+    state: restarted
+    dameon_reload: yes
